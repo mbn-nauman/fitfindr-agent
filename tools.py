@@ -134,7 +134,8 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
                 f"A user is considering buying this thrifted item: {item_summary}. "
                 f"They haven't described their wardrobe yet. Give them 1-2 suggestions "
                 f"for what types of pieces pair well with it and what aesthetic or vibe it suits. "
-                f"Be specific and casual, like a friend giving advice."
+                f"Be specific and casual, like a friend giving advice. "
+                f"Keep it to 3-4 sentences total — no long paragraphs."
             )
         else:
             wardrobe_lines = "\n".join(
@@ -147,7 +148,8 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
                 f"Suggest 1-2 complete outfit combinations using the new item paired with "
                 f"specific pieces from their wardrobe. Reference each wardrobe piece by name. "
                 f"Describe the overall vibe and include a small styling tip if relevant. "
-                f"Be casual and specific, like a friend giving advice."
+                f"Be casual and specific, like a friend giving advice. "
+                f"Keep it to 3-4 sentences total — no long paragraphs."
             )
 
         response = client.chat.completions.create(
