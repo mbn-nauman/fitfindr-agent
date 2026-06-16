@@ -15,74 +15,90 @@ You must have at least 3 tools. The three required tools are listed — add any 
 ### Tool 1: search_listings
 
 **What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+The user's input is used by the agent to extract 3 things: the description of the clothing they want, the size they want for that clothing item, and the max_price they are willing to pay for it. The tool/function search_listings() then uses these 3 extracted attributes as input parameters and returns the top 3 clothing items from the listings which match the input parameters.
 
 **Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `description` (str): ...
-- `size` (str): ...
-- `max_price` (float): ...
+- `description` (str): The description of the clothing the user wants.
+- `size` (str): The size in which the user wants the clothing item.
+- `max_price` (float): The maximum price the user is willing to pay for this clothing item.
 
 **What it returns:**
-<!-- Describe the return value — what fields does a result contain? -->
+The function/tool returns the top 3 matches as a list of dictionaries sorted by relevance (relevance will be measured by finding a score of how many paramters directly matched with the item) from the listings according to the input paramters it received. Each dictionary includes fields {"id", "title", "description", "category", "style_tags", "size", "condition", "price", "colors", "brand", "platform"}.
 
 **What happens if it fails or returns nothing:**
-<!-- What should the agent do if no listings match? -->
+If the tool fails or returns nothing, then the user is told to try some other attributes because the attributes they gave were not matched with any listings. Also, the agent stops the loop here and does not call the next function (suggest_outfit()).
 
 ---
 
 ### Tool 2: suggest_outfit
 
 **What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+The tool suggest_outfit() takes a listing dict and a wardrobe dict, then calls the LLM to generate 1–2 complete outfit suggestions using the new item paired with pieces from the wardrobe. If the wardrobe is empty, it falls back to general styling advice for the item instead.
 
 **Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `new_item` (dict): ...
-- `wardrobe` (dict): ...
+- `new_item` (dict): A dictionary containing all information about the new clothing item. Fields: `id` (str), `title` (str), `description` (str), `category` (str), `style_tags` (list[str]), `size` (str), `condition` (str), `price` (float), `colors` (list[str]), `brand` (str or None), `platform` (str).
+- `wardrobe` (dict): A dictionary with a single key `items`, which maps to a list of wardrobe item dicts. Each wardrobe item has: `id` (str), `name` (str), `category` (str), `colors` (list[str]), `style_tags` (list[str]), `notes` (str or None). May be empty — `wardrobe["items"]` will be an empty list for a new user.
 
 **What it returns:**
-<!-- Describe the return value -->
+A non-empty string with 1–2 outfit suggestions. Each suggestion references specific wardrobe pieces by name (e.g. "pair with your dark wash baggy jeans and chunky white sneakers"), describes the overall aesthetic or vibe, and may include a small styling tip (e.g. tuck, roll sleeves). If the wardrobe is empty, returns general advice on what types of pieces pair well with the item and what aesthetic it suits.
 
 **What happens if it fails or returns nothing:**
-<!-- What should the agent do if the wardrobe is empty or no outfit can be suggested? -->
+- Empty wardrobe (expected case): the tool does not fail — it returns general styling advice for the item instead of wardrobe-specific combinations.
+- LLM/API error (actual failure): return the string "FitFindr found your item but was unable to generate a styling suggestion. The item found was: {title} — ${price} on {platform}." Do not raise an exception. 
 
 ---
 
 ### Tool 3: create_fit_card
 
 **What it does:**
-<!-- Describe what this tool does in 1–2 sentences -->
+It takes the outfit suggestion string and the new item from the listings as inputs. It calls the LLM with higher temperature and then generates a short, shareable outfit caption for the thrifted find that the user can use on their Instagram/Tiktok post.
 
 **Input parameters:**
-<!-- List each parameter, its type, and what it represents -->
-- `outfit` (...): ...
+- `outfit` (str): The outfit suggestion string. May be empty or whitespace-only if suggest_outfit() failed — the tool must check for this before calling the LLM.
+- `new_item` (dict): The listing dict for the thrifted item. The tool uses `title` (str), `price` (float), and `platform` (str) from this dict to reference the item naturally in the caption.
 
 **What it returns:**
-<!-- Describe the return value -->
+It returns a 2-4 sentence long caption as a String for the user to use as a caption for their new instagram/tiktom post. The caption should feel casual and authentic (like a real OOTD post, not a product description). Mention the item name, price, and platform naturally (once each). Capture the outfit vibe in specific terms. Sound different each time for different inputs (use higher LLM temperature)
 
 **What happens if it fails or returns nothing:**
-<!-- What should the agent do if the outfit data is incomplete? -->
+- Empty/whitespace `outfit` string (input guard): return "No outfit suggestion was available to generate a caption from." Do not call the LLM.
+- LLM/API error (actual failure): return "FitFindr found your item but was unable to generate a fit caption. The item was: {title} — ${price} on {platform}." Do not raise an exception.
 
 ---
 
 ### Additional Tools (if any)
 
-<!-- Copy the block above for any tools beyond the required three -->
+No additional tools will be used
 
 ---
 
 ## Planning Loop
 
 **How does your agent decide which tool to call next?**
-<!-- Describe the logic your planning loop uses. What does it look at? What conditions change its behavior? How does it know when it's done? -->
+
+- Step 1: First the agent looks at the user's input of what type of new clothing item they want. Then the agent asks the LLM (low temperature) to extract 3 things from it: the description of the clothing, the size of the item, and the maximum price the user is willing to pay. If the user did not mention a size or price, the LLM should return `None` for that field. The extracted values are stored in `session["parsed"]` as `{"description": str, "size": str or None, "max_price": float or None}`.
+
+- Step 2: Then these attributes are given to `search_listings()` as input and the tool is run. After that, the agent checks the returned value from the the tool. 
+     1. If it is empty or an error was caused, then `session["error"]`="Try some other attributes because the attributes you gave were not matched with any listings." and `session["error"]` is returned. Also, the agent stops the loop here and does not call the next function (`suggest_outfit()`). 
+     2. If the `search_listings()` tool does return the matched items, then they are put into `session["search_results"]`, then the top item from that returned list is saved in a variable in `session["selected_item"]`. 
+
+- Step 3: Then `suggest_outfit()` is called:
+     1. If the LLM/API error, then `session["error"]`= "FitFindr found your item but was unable to generate a styling suggestion. The item found was: {title} — ${price} on {platform}." and `session["error"]` is returned. Do not raise an exception and stop the loop. 
+     2. If it returns a string, then the suggestion is saved in `session["outfit_suggestion"]` and the agent calls the next function `create_fit_card()`. 
+
+- Step 4: Then `create_fit_card()` is run and 
+     1. If there was an LLM error, then `session["error"]`= "FitFindr found your item but was unable to generate a fit caption. The item was: {title} — ${price} on {platform}." and `session["error"]` is returned. Do not raise an exception. 
+     2. If it does return a string, then save that in `session["fit_card"]`and return that to the user as the final output.
+
 
 ---
 
 ## State Management
 
 **How does information from one tool get passed to the next?**
-<!-- Describe how your agent stores and accesses state within a session. What data is tracked? How is it passed between tool calls? -->
+A session dict is initialized at the start of each run and acts as the shared state for the entire interaction. Each tool writes its output into a key in this dict, and the next tool reads from it rather than receiving values directly.
+
+Keys tracked: `session["parsed"]` (extracted description/size/price), `session["search_results"]` (listings found), `session["selected_item"]` (top result, passed to suggest_outfit), `session["outfit_suggestion"]` (passed to create_fit_card), `session["fit_card"]` (final output), and `session["error"]` (set if the loop exits early, None on success).
 
 ---
 
